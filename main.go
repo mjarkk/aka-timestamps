@@ -246,7 +246,7 @@ func main() {
 			}
 		}
 
-		maxLen := 140
+		maxLen := 120
 		shoterQuestion := question
 		if len(shoterQuestion) > maxLen {
 			shoterQuestion = shoterQuestion[:maxLen-2] + ".."
@@ -315,7 +315,8 @@ func main() {
 			lastPair := pairs[pairsIdx]
 			if i == 0 {
 				lastPair = []int{index}
-			} else if lastPair[len(lastPair)-1]+15 > index {
+			} else if lastPair[len(lastPair)-1]+6 > index {
+				// Sometimes tweaking this max search offset gives a bit better results
 				lastPair = append(lastPair, index)
 			} else {
 				pairs = append(pairs, []int{index})
@@ -356,4 +357,6 @@ func main() {
 
 		fmt.Printf("%d. %s %s\n", questionIdx+1, atStr, question.shortent)
 	}
+
+	fmt.Println("\nPlease correct me if i'm wrong these are auto generated :)")
 }
