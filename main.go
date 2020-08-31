@@ -107,7 +107,7 @@ func toSearchable(text string) string {
 func main() {
 	fmt.Println("Cleaningup and preparing..")
 	os.RemoveAll(".vid-meta")
-	err = os.Mkdir(".vid-meta", 0777)
+	err := os.Mkdir(".vid-meta", 0777)
 	check(err)
 
 	fmt.Println("Downloading video meta data..")
