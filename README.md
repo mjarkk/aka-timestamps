@@ -12,3 +12,7 @@ I'm not really interested in all questions so i usually search for the time stam
 ```sh
 ./aka-timestamps "https://www.youtube.com/watch?v=7vFEkVQiF_c"
 ```
+
+# Things that could be improved:
+- Do not have to spesify the video to download
+- Cache downloaded results

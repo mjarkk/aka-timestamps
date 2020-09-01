@@ -15,102 +15,29 @@ import (
 	"github.com/asticode/go-astisub"
 )
 
-func check(err error) {
-	if err != nil {
-		fmt.Println("Err:", err)
-		os.Exit(1)
-	}
+type textAtTime struct {
+	text string
+	at   time.Duration
 }
 
-func toSearchable(text string) string {
-	text = strings.TrimSpace(text)
-	text = strings.ToLower(text)
-
-	newText := ""
-	for _, letter := range text {
-		repalceWith, found := map[rune]rune{
-			'\'': 0,
-			'"':  0,
-			'“':  0,
-			'”':  0,
-			')':  0,
-			'(':  0,
-			'.':  0,
-			';':  0,
-			':':  0,
-			',':  0,
-			'?':  0,
-			'!':  0,
-			'@':  0,
-			'#':  0,
-			'$':  0,
-			'%':  0,
-			'^':  0,
-			'&':  0,
-			'*':  0,
-			'_':  0,
-			'+':  0,
-			']':  0,
-			'[':  0,
-			'}':  0,
-			'{':  0,
-			'/':  ' ',
-			'\t': ' ',
-			'\n': ' ',
-		}[letter]
-		if !found {
-			newText += string(letter)
-			continue
-		}
-
-		if repalceWith != 0 {
-			newText += string(repalceWith)
-		}
-	}
-
-	words := strings.Split(newText, " ")
-	newWords := []string{}
-	for _, word := range words {
-		_, match := map[string]uint8{
-			"i":       0,
-			"a":       0,
-			"was":     0,
-			"and":     0,
-			"it":      0,
-			"of":      0,
-			"like":    0,
-			"do":      0,
-			"to":      0,
-			"you":     0,
-			"as":      0,
-			"have":    0,
-			"when":    0,
-			"the":     0,
-			"because": 0,
-			"in":      0,
-			"is":      0,
-			"that":    0,
-		}[word]
-		if match {
-			continue
-		}
-
-		if len(newWords) > 0 && newWords[len(newWords)-1] == word {
-			continue
-		}
-		newWords = append(newWords, word)
-	}
-
-	return strings.Join(newWords, " ")
+type questionType struct {
+	full       string
+	searchable string
+	shortent   string
 }
 
-func main() {
-	fmt.Println("Cleaningup and preparing..")
+type detectedTimeStamp struct {
+	question questionType
+	atStr    string
+	found    bool
+}
+
+func cleaupAndPrepair() error {
 	os.RemoveAll(".vid-meta")
-	err := os.Mkdir(".vid-meta", 0777)
-	check(err)
+	return os.Mkdir(".vid-meta", 0777)
+}
 
-	fmt.Println("Downloading video meta data..")
+func downloadVideoMeta() error {
 	cmd := exec.Command(
 		"../youtube-dl",
 		os.Args[len(os.Args)-1],
@@ -121,26 +48,24 @@ func main() {
 		"--skip-download",
 	)
 	wd, err := os.Getwd()
-	check(err)
+	if err != nil {
+		return err
+	}
 	cmd.Dir = path.Join(wd, ".vid-meta")
 
 	stdOut, err := cmd.CombinedOutput()
-	if err != nil {
-		if stdOut != nil && len(stdOut) > 0 {
-			err = errors.New(string(stdOut))
-		}
-		check(err)
+	if err != nil && stdOut != nil && len(stdOut) > 0 {
+		err = errors.New(string(stdOut))
 	}
+	return err
+}
 
-	fmt.Println("Extracting subtitles..")
+func extractSubtitles() ([]textAtTime, map[string][]int, error) {
 	elementRegx := regexp.MustCompile(`<(\/)?(\d{1,2}:\d{1,2}:\d{1,2}(\.\d+)?|c)(\/)?>`)
 
 	subtitles, err := astisub.OpenFile(".vid-meta/vid.en.vtt")
-	check(err)
-
-	type textAtTime struct {
-		text string
-		at   time.Duration
+	if err != nil {
+		return nil, nil, err
 	}
 
 	lines := []textAtTime{}
@@ -186,9 +111,15 @@ func main() {
 		wordsMap[word.text] = indexes
 	}
 
-	fmt.Println("Extracting comments..")
+	return words, wordsMap, nil
+}
+
+func extractComments() ([]string, error) {
 	descriptionBytes, err := ioutil.ReadFile(".vid-meta/vid.description")
-	check(err)
+	if err != nil {
+		return nil, err
+	}
+
 	description := string(descriptionBytes)
 	for i := 0; i < 10; i++ {
 		toReplace := ""
@@ -230,14 +161,12 @@ func main() {
 		}
 	}
 
-	fmt.Println("Detected questions:")
-	type questionType struct {
-		full       string
-		searchable string
-		shortent   string
-	}
+	return matched, nil
+}
+
+func detectQuestions(linesThatMightBeQuestions []string) []questionType {
 	questions := []questionType{}
-	for i, match := range matched {
+	for _, match := range linesThatMightBeQuestions {
 		question := strings.Split(match, "\n")[0]
 		for i, letter := range question {
 			if !strings.ContainsRune("1234567890.:= ", letter) {
@@ -251,7 +180,6 @@ func main() {
 		if len(shoterQuestion) > maxLen {
 			shoterQuestion = shoterQuestion[:maxLen-2] + ".."
 		}
-		fmt.Printf("%d. %s\n", i+1, shoterQuestion)
 
 		maxLen = 170
 		searchableQuestion := question
@@ -291,11 +219,12 @@ func main() {
 			shortent:   shoterQuestion,
 		})
 	}
-	matched = nil
+	return questions
+}
 
-	fmt.Print("\n\nTime stamps:\n\n")
-
-	for questionIdx, question := range questions {
+func detectTimestamps(wordsMap map[string][]int, words []textAtTime, detectedQuestions []questionType) []detectedTimeStamp {
+	res := []detectedTimeStamp{}
+	for _, question := range detectedQuestions {
 		indexes := []int{}
 		for _, word := range strings.Split(question.searchable, " ") {
 			match, ok := wordsMap[word]
@@ -331,7 +260,8 @@ func main() {
 		}
 
 		resultIndexes := pairs[longestPairIdx]
-		atStr := "QUESTION NOT FOUND"
+		atStr := ""
+		found := false
 		if len(resultIndexes) > 5 {
 			at := words[resultIndexes[0]].at - (time.Second * 3)
 
@@ -353,10 +283,46 @@ func main() {
 			if hours > 0 {
 				atStr = fmt.Sprintf("%d:%s", hours, atStr)
 			}
+
+			found = true
 		}
 
-		fmt.Printf("%d. %s %s\n", questionIdx+1, atStr, question.shortent)
+		res = append(res, detectedTimeStamp{
+			question: question,
+			atStr:    atStr,
+			found:    found,
+		})
+	}
+	return res
+}
+
+func main() {
+	fmt.Println("Cleaningup and preparing..")
+	err := cleaupAndPrepair()
+	check(err)
+
+	fmt.Println("Downloading video meta data..")
+	err = downloadVideoMeta()
+	check(err)
+
+	fmt.Println("Extracting subtitles..")
+	words, wordsMap, err := extractSubtitles()
+	check(err)
+
+	fmt.Println("Extracting comments..")
+	linesThatMightBeQuestions, err := extractComments()
+	check(err)
+
+	fmt.Println("Detected questions:")
+	detectedQuestions := detectQuestions(linesThatMightBeQuestions)
+	for i, question := range detectedQuestions {
+		fmt.Printf("%d. %s\n", i+1, question.shortent)
 	}
 
+	fmt.Print("\n\nTime stamps:\n\n")
+	output := detectTimestamps(wordsMap, words, detectedQuestions)
+	for i, detectedItem := range output {
+		fmt.Printf("%d. %s %s\n", i+1, detectedItem.atStr, detectedItem.question.shortent)
+	}
 	fmt.Println("\nPlease correct me if i'm wrong these are auto generated :)")
 }
