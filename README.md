@@ -16,3 +16,4 @@ I'm not really interested in all questions so i usually search for the time stam
 # Things that could be improved:
 - Do not have to spesify the video to download
 - Cache downloaded results
+- Automaticlly detect common words like `a, i, the` instaid of having a pre defined blacklist
