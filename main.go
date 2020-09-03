@@ -9,6 +9,7 @@ import (
 	"path"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -134,34 +135,50 @@ func extractComments() ([]string, error) {
 
 	descriptionParts := strings.Split(description, "\n\n")
 
-	var matched []string = nil
+	matched := []string{}
 	for _, part := range descriptionParts {
 		part = strings.TrimSpace(part)
 		if len(part) < 10 {
 			continue
 		}
 
-		if matched == nil {
-			if part[0] == '1' {
-				matched = []string{part}
-				continue
-			}
-			parts := strings.SplitN(part, "\n", 2)
-			if len(parts) >= 2 && parts[1][0] == '1' {
-				matched = []string{parts[1]}
-				continue
-			}
+		if strings.ContainsRune("123456789", rune(part[0])) {
+			matched = append(matched, part)
 			continue
 		}
-
-		if strings.Contains("123456789", string(part[0])) {
-			matched = append(matched, part)
-		} else {
-			break
+		parts := strings.SplitN(part, "\n", 2)
+		if len(parts) >= 2 && strings.ContainsRune("123456789", rune(parts[1][0])) {
+			matched = append(matched, parts[1])
+			continue
 		}
 	}
 
-	return matched, nil
+	filteredList := []string{}
+	minNumber := 0
+	for _, item := range matched {
+		numberStr := []byte{}
+		for _, letter := range item {
+			if !strings.ContainsRune("123456789", letter) {
+				break
+			}
+			numberStr = append(numberStr, byte(letter))
+		}
+		if len(numberStr) == 0 {
+			continue
+		}
+		num, err := strconv.Atoi(string(numberStr))
+		if err != nil {
+			continue
+		}
+		if num < minNumber-3 || num > minNumber+3 {
+			continue
+		}
+
+		filteredList = append(filteredList, item)
+		minNumber = num
+	}
+
+	return filteredList, nil
 }
 
 func detectQuestions(linesThatMightBeQuestions []string) []questionType {
