@@ -158,7 +158,7 @@ func extractComments() ([]string, error) {
 	for _, item := range matched {
 		numberStr := []byte{}
 		for _, letter := range item {
-			if !strings.ContainsRune("123456789", letter) {
+			if !strings.ContainsRune("1234567890", letter) {
 				break
 			}
 			numberStr = append(numberStr, byte(letter))

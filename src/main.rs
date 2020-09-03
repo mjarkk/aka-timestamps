@@ -90,6 +90,8 @@ fn extract_comments() -> Result<Vec<String>, String> {
     }
 
     let mut matched = vec![];
+    let mut min_number: isize = 1;
+
     let parts: Vec<&str> = description.split("\n\n").collect();
     for mut part in parts {
         part = part.trim();
@@ -98,25 +100,32 @@ fn extract_comments() -> Result<Vec<String>, String> {
         }
 
         let mut part_vec: Vec<char> = part.chars().collect();
-        if matched.len() == 0 {
-            if part_vec[0] == '1' {
-                matched.push(part.to_string());
+        if !"123456789".contains(part_vec[0]) {
+            let sub_parts: Vec<&str> = part.splitn(2, "\n").collect();
+            if sub_parts.len() != 2 {
                 continue;
             }
-
-            let sub_parts: Vec<&str> = part.splitn(2, "\n").collect();
-            if sub_parts.len() >= 2 {
-                part = sub_parts[1];
-                part_vec = part.chars().collect();
-                if part_vec[0] == '1' {
-                    matched.push(part.to_string());
-                }
+            part = sub_parts[1];
+            part_vec = part.chars().collect();
+            if !"123456789".contains(part_vec[0]) {
+                continue;
             }
-        } else if "123456789".contains(part_vec[0]) {
-            matched.push(part.to_string());
-        } else {
-            break;
         }
+
+        let mut question_number_str = format!("{}", part_vec[0]);
+        if "1234567890".contains(part_vec[1]) {
+            question_number_str = format!("{}{}", question_number_str, part_vec[1]);
+        }
+        let question_number = match question_number_str.parse::<isize>() {
+            Err(_) => continue,
+            Ok(v) => v,
+        };
+        if question_number < min_number - 4 || question_number > min_number + 4 {
+            continue;
+        }
+
+        matched.push(part.to_string());
+        min_number = question_number;
     }
 
     Ok(matched)
