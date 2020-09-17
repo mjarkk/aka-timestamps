@@ -18,44 +18,27 @@ func toSearchable(text string) string {
 	text = strings.ToLower(text)
 
 	newText := ""
+	var lastLetter rune
 	for _, letter := range text {
-		repalceWith, found := map[rune]rune{
-			'\'': 0,
-			'"':  0,
-			'“':  0,
-			'”':  0,
-			')':  0,
-			'(':  0,
-			'.':  0,
-			';':  0,
-			':':  0,
-			',':  0,
-			'?':  0,
-			'!':  0,
-			'@':  0,
-			'#':  0,
-			'$':  0,
-			'%':  0,
-			'^':  0,
-			'&':  0,
-			'*':  0,
-			'_':  0,
-			'+':  0,
-			']':  0,
-			'[':  0,
-			'}':  0,
-			'{':  0,
+		replaceWith, found := map[rune]rune{
 			'/':  ' ',
 			'\t': ' ',
 			'\n': ' ',
+			'-':  ' ',
+			'"':  ' ',
+			'\'': ' ',
 		}[letter]
-		if !found {
-			newText += string(letter)
-			continue
+		if found {
+			letter = replaceWith
 		}
 
-		if repalceWith != 0 {
-			newText += string(repalceWith)
+		if strings.ContainsRune("abcdefghijklmnopqrstuvwxyz 1234567890", letter) {
+			if letter == ' ' && letter == lastLetter {
+				continue
+			}
+
+			lastLetter = letter
+			newText += string(letter)
 		}
 	}
 

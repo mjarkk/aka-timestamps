@@ -29,8 +29,23 @@ type questionType struct {
 
 type detectedTimeStamp struct {
 	question questionType
+	number   int
 	atStr    string
 	found    bool
+}
+
+func parseArgs() (youtubeURL string, showAll bool, err error) {
+	for _, arg := range os.Args[1:] {
+		if arg == "-a" || arg == "--all" {
+			showAll = true
+		} else if strings.Contains(arg, "youtube.com") || strings.Contains(arg, "youtu.be") {
+			youtubeURL = arg
+		}
+	}
+	if youtubeURL == "" {
+		err = errors.New("No video url provided")
+	}
+	return
 }
 
 func cleaupAndPrepair() error {
@@ -38,10 +53,10 @@ func cleaupAndPrepair() error {
 	return os.Mkdir(".vid-meta", 0777)
 }
 
-func downloadVideoMeta() error {
+func downloadVideoMeta(url string) error {
 	cmd := exec.Command(
 		"../youtube-dl",
-		os.Args[len(os.Args)-1],
+		url,
 		"--write-auto-sub",
 		"--write-description",
 		"--output",
@@ -184,9 +199,14 @@ func extractComments() ([]string, error) {
 func detectQuestions(linesThatMightBeQuestions []string) []questionType {
 	questions := []questionType{}
 	for _, match := range linesThatMightBeQuestions {
-		question := strings.Split(match, "\n")[0]
+		questionLines := strings.Split(match, "\n")
+		question := questionLines[0]
+		if len(questionLines) >= 3 {
+			question += " " + questionLines[1]
+		}
+
 		for i, letter := range question {
-			if !strings.ContainsRune("1234567890.:= ", letter) {
+			if !strings.ContainsRune("1234567890.:=() ", letter) {
 				question = question[i:]
 				break
 			}
@@ -239,9 +259,10 @@ func detectQuestions(linesThatMightBeQuestions []string) []questionType {
 	return questions
 }
 
-func detectTimestamps(wordsMap map[string][]int, words []textAtTime, detectedQuestions []questionType) []detectedTimeStamp {
+func detectTimestamps(wordsMap map[string][]int, words []textAtTime, detectedQuestions []questionType, allTimes bool) []detectedTimeStamp {
 	res := []detectedTimeStamp{}
-	for _, question := range detectedQuestions {
+
+	for questionIdx, question := range detectedQuestions {
 		indexes := []int{}
 		for _, word := range strings.Split(question.searchable, " ") {
 			match, ok := wordsMap[word]
@@ -255,7 +276,11 @@ func detectTimestamps(wordsMap map[string][]int, words []textAtTime, detectedQue
 		sort.Ints(indexes)
 
 		pairs := [][]int{{}}
-		longestPairIdx := 0
+		longestPairIdx := []int{0}
+		longestPairIdxLast := func() int {
+			return longestPairIdx[len(longestPairIdx)-1]
+		}
+
 		for i, index := range indexes {
 			pairsIdx := len(pairs) - 1
 			lastPair := pairs[pairsIdx]
@@ -269,57 +294,72 @@ func detectTimestamps(wordsMap map[string][]int, words []textAtTime, detectedQue
 				continue
 			}
 
-			if pairsIdx != longestPairIdx && len(lastPair) > len(pairs[longestPairIdx]) {
-				longestPairIdx = pairsIdx
+			if pairsIdx != longestPairIdxLast() && len(lastPair) > len(pairs[longestPairIdxLast()]) {
+				longestPairIdx = append(longestPairIdx, pairsIdx)
 			}
 
 			pairs[len(pairs)-1] = lastPair
 		}
 
-		resultIndexes := pairs[longestPairIdx]
-		atStr := ""
-		found := false
-		if len(resultIndexes) > 5 {
-			at := words[resultIndexes[0]].at - (time.Second * 3)
-
-			hours := int(at.Hours())
-			minutes := int(at.Minutes()) % 60
-			seconds := int(at.Seconds()) % 60
-
-			minutesStr := fmt.Sprintf("%d", minutes)
-			if len(minutesStr) == 1 {
-				minutesStr = "0" + minutesStr
-			}
-
-			secondsStr := fmt.Sprintf("%d", seconds)
-			if len(secondsStr) == 1 {
-				secondsStr = "0" + secondsStr
-			}
-
-			atStr = fmt.Sprintf("%s:%s", minutesStr, secondsStr)
-			if hours > 0 {
-				atStr = fmt.Sprintf("%d:%s", hours, atStr)
-			}
-
-			found = true
+		if !allTimes {
+			longestPairIdx = []int{longestPairIdx[len(longestPairIdx)-1]}
+		} else if len(longestPairIdx) > 3 {
+			longestPairIdx = longestPairIdx[len(longestPairIdx)-3:]
 		}
 
-		res = append(res, detectedTimeStamp{
-			question: question,
-			atStr:    atStr,
-			found:    found,
-		})
+		for _, pairIdx := range longestPairIdx {
+			atStr := ""
+			found := false
+
+			resultIndexes := pairs[pairIdx]
+			if len(resultIndexes) > 5 {
+				at := words[resultIndexes[0]].at - (time.Second * 3)
+
+				hours := int(at.Hours())
+				minutes := int(at.Minutes()) % 60
+				seconds := int(at.Seconds()) % 60
+
+				minutesStr := fmt.Sprintf("%d", minutes)
+				if len(minutesStr) == 1 {
+					minutesStr = "0" + minutesStr
+				}
+
+				secondsStr := fmt.Sprintf("%d", seconds)
+				if len(secondsStr) == 1 {
+					secondsStr = "0" + secondsStr
+				}
+
+				atStr = fmt.Sprintf("%s:%s", minutesStr, secondsStr)
+				if hours > 0 {
+					atStr = fmt.Sprintf("%d:%s", hours, atStr)
+				}
+
+				found = true
+			}
+
+			res = append(res, detectedTimeStamp{
+				question: question,
+				atStr:    atStr,
+				found:    found,
+				number:   questionIdx + 1,
+			})
+		}
 	}
+
 	return res
 }
 
 func main() {
-	fmt.Println("Cleaningup and preparing..")
-	err := cleaupAndPrepair()
+	fmt.Println("Parsing args..")
+	youtubeURL, showAll, err := parseArgs()
+	check(err)
+
+	fmt.Println("Cleaning up and preparing..")
+	err = cleaupAndPrepair()
 	check(err)
 
 	fmt.Println("Downloading video meta data..")
-	err = downloadVideoMeta()
+	err = downloadVideoMeta(youtubeURL)
 	check(err)
 
 	fmt.Println("Extracting subtitles..")
@@ -337,9 +377,13 @@ func main() {
 	}
 
 	fmt.Print("\n\nTime stamps:\n\n")
-	output := detectTimestamps(wordsMap, words, detectedQuestions)
-	for i, detectedItem := range output {
-		fmt.Printf("%d. %s %s\n", i+1, detectedItem.atStr, detectedItem.question.shortent)
+	output := detectTimestamps(wordsMap, words, detectedQuestions, showAll)
+	for _, detectedItem := range output {
+		if detectedItem.found {
+			fmt.Printf("%d. %s %s\n", detectedItem.number, detectedItem.atStr, detectedItem.question.shortent)
+		} else {
+			fmt.Printf("%d. ??:?? %s\n", detectedItem.number, detectedItem.question.shortent)
+		}
 	}
 	fmt.Println("\nPlease correct me if i'm wrong these are auto generated :)")
 }
