@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -11,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/asticode/go-astisub"
@@ -21,65 +24,77 @@ type textAtTime struct {
 	at   time.Duration
 }
 
-type questionType struct {
-	full       string
-	searchable string
-	shortent   string
+type QuestionType struct {
+	Full       string
+	Searchable string
+	Shortent   string
 }
 
-type detectedTimeStamp struct {
-	question questionType
-	number   int
-	atStr    string
-	found    bool
+type DetectedTimeStamp struct {
+	QuestionIdx int
+	AtStr       string
+	Found       bool
 }
 
-func parseArgs() (youtubeURL string, showAll bool, err error) {
-	for _, arg := range os.Args[1:] {
-		if arg == "-a" || arg == "--all" {
-			showAll = true
-		} else if strings.Contains(arg, "youtube.com") || strings.Contains(arg, "youtu.be") {
-			youtubeURL = arg
-		}
+func startup() (fetchOnStartup bool, err error) {
+	_, err = ioutil.ReadFile("./youtube-dl")
+	if err != nil {
+		return
 	}
-	if youtubeURL == "" {
-		err = errors.New("No video url provided")
+
+	err = os.Mkdir(".vid-meta", 0777)
+	if os.IsExist(err) {
+		err = nil
+	} else {
+		fetchOnStartup = true
 	}
 	return
 }
 
-func cleaupAndPrepair() error {
-	os.RemoveAll(".vid-meta")
-	return os.Mkdir(".vid-meta", 0777)
-}
-
-func downloadVideoMeta(url string) error {
+func downloadLatestVideosMeta() error {
 	cmd := exec.Command(
 		"../youtube-dl",
-		url,
+		"--yes-playlist",
+		"--ignore-errors",
+		"--output", "%(playlist_index)s.%(title)s.vid",
 		"--write-auto-sub",
 		"--write-description",
-		"--output",
-		"vid",
-		"--skip-download",
+		"--max-downloads", "5",
+		"--skip-download", "https://www.youtube.com/playlist?list=UUs58xfxPpjVARRuwjH8usfw",
 	)
+
 	wd, err := os.Getwd()
 	if err != nil {
 		return err
 	}
 	cmd.Dir = path.Join(wd, ".vid-meta")
 
-	stdOut, err := cmd.CombinedOutput()
-	if err != nil && stdOut != nil && len(stdOut) > 0 {
-		err = errors.New(string(stdOut))
+	var output bytes.Buffer
+	cmd.Stdout = &output
+	cmd.Stderr = &output
+	err = cmd.Run()
+	if output.Len() == 0 {
+		if err != nil {
+			return fmt.Errorf("youtube-dl exitted with error: %v", err)
+		}
+		return errors.New("youtube-dl exitted without any output nor error code")
 	}
-	return err
+
+	if err == nil {
+		return nil
+	}
+
+	if strings.Contains(err.Error(), "101") {
+		return nil
+	}
+
+	return errors.New(output.String())
 }
 
-func extractSubtitles() ([]textAtTime, map[string][]int, error) {
+func extractSubtitles(ep *FoundEp) ([]textAtTime, map[string][]int, error) {
 	elementRegx := regexp.MustCompile(`<(\/)?(\d{1,2}:\d{1,2}:\d{1,2}(\.\d+)?|c)(\/)?>`)
 
-	subtitles, err := astisub.OpenFile(".vid-meta/vid.en.vtt")
+	subtitles, err := astisub.OpenFile(".vid-meta/" + ep.BaseName() + "en.vtt")
 	if err != nil {
 		return nil, nil, err
 	}
@@ -130,8 +145,8 @@ func extractSubtitles() ([]textAtTime, map[string][]int, error) {
 	return words, wordsMap, nil
 }
 
-func extractComments() ([]string, error) {
-	descriptionBytes, err := ioutil.ReadFile(".vid-meta/vid.description")
+func extractComments(ep *FoundEp) ([]string, error) {
+	descriptionBytes, err := ioutil.ReadFile(".vid-meta/" + ep.BaseName() + "description")
 	if err != nil {
 		return nil, err
 	}
@@ -196,8 +211,8 @@ func extractComments() ([]string, error) {
 	return filteredList, nil
 }
 
-func detectQuestions(linesThatMightBeQuestions []string) []questionType {
-	questions := []questionType{}
+func detectQuestions(linesThatMightBeQuestions []string) []QuestionType {
+	questions := []QuestionType{}
 	for _, match := range linesThatMightBeQuestions {
 		questionLines := strings.Split(match, "\n")
 		question := questionLines[0]
@@ -250,21 +265,21 @@ func detectQuestions(linesThatMightBeQuestions []string) []questionType {
 			}
 		}
 
-		questions = append(questions, questionType{
-			full:       question,
-			searchable: searchableQuestion,
-			shortent:   shoterQuestion,
+		questions = append(questions, QuestionType{
+			Full:       question,
+			Searchable: searchableQuestion,
+			Shortent:   shoterQuestion,
 		})
 	}
 	return questions
 }
 
-func detectTimestamps(wordsMap map[string][]int, words []textAtTime, detectedQuestions []questionType, allTimes bool) []detectedTimeStamp {
-	res := []detectedTimeStamp{}
+func detectTimestamps(wordsMap map[string][]int, words []textAtTime, detectedQuestions []QuestionType) []DetectedTimeStamp {
+	res := []DetectedTimeStamp{}
 
 	for questionIdx, question := range detectedQuestions {
 		indexes := []int{}
-		for _, word := range strings.Split(question.searchable, " ") {
+		for _, word := range strings.Split(question.Searchable, " ") {
 			match, ok := wordsMap[word]
 			if ok {
 				for _, item := range match {
@@ -301,9 +316,7 @@ func detectTimestamps(wordsMap map[string][]int, words []textAtTime, detectedQue
 			pairs[len(pairs)-1] = lastPair
 		}
 
-		if !allTimes {
-			longestPairIdx = []int{longestPairIdx[len(longestPairIdx)-1]}
-		} else if len(longestPairIdx) > 3 {
+		if len(longestPairIdx) > 3 {
 			longestPairIdx = longestPairIdx[len(longestPairIdx)-3:]
 		}
 
@@ -337,11 +350,10 @@ func detectTimestamps(wordsMap map[string][]int, words []textAtTime, detectedQue
 				found = true
 			}
 
-			res = append(res, detectedTimeStamp{
-				question: question,
-				atStr:    atStr,
-				found:    found,
-				number:   questionIdx + 1,
+			res = append(res, DetectedTimeStamp{
+				QuestionIdx: questionIdx,
+				AtStr:       atStr,
+				Found:       found,
 			})
 		}
 	}
@@ -349,41 +361,196 @@ func detectTimestamps(wordsMap map[string][]int, words []textAtTime, detectedQue
 	return res
 }
 
-func main() {
-	fmt.Println("Parsing args..")
-	youtubeURL, showAll, err := parseArgs()
-	check(err)
+type FoundEps []FoundEp
 
-	fmt.Println("Cleaning up and preparing..")
-	err = cleaupAndPrepair()
-	check(err)
+func (s FoundEps) Len() int      { return len(s) }
+func (s FoundEps) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
 
-	fmt.Println("Downloading video meta data..")
-	err = downloadVideoMeta(youtubeURL)
-	check(err)
+type FoundEpsByEpNumb struct{ FoundEps }
 
-	fmt.Println("Extracting subtitles..")
-	words, wordsMap, err := extractSubtitles()
-	check(err)
+func (s FoundEpsByEpNumb) Less(i, j int) bool { return s.FoundEps[i].Number < s.FoundEps[j].Number }
 
-	fmt.Println("Extracting comments..")
-	linesThatMightBeQuestions, err := extractComments()
-	check(err)
+type FoundEp struct {
+	Number           int
+	RawNumber        string
+	Name             string
+	FoundDescription bool
+	FoundVTT         bool
+	FoundResults     *FoundResults
+}
 
-	fmt.Println("Detected questions:")
-	detectedQuestions := detectQuestions(linesThatMightBeQuestions)
-	for i, question := range detectedQuestions {
-		fmt.Printf("%d. %s\n", i+1, question.shortent)
+func (ep *FoundEp) BaseName() string {
+	return fmt.Sprintf("%s.%s.vid.", ep.RawNumber, ep.Name)
+}
+
+type FoundResults struct {
+	Questions []QuestionType
+	TimeStamp []DetectedTimeStamp
+	Err       string
+}
+
+func checkDownloadedVideos() error {
+	items, err := ioutil.ReadDir(".vid-meta")
+	if err != nil {
+		return err
 	}
 
-	fmt.Print("\n\nTime stamps:\n\n")
-	output := detectTimestamps(wordsMap, words, detectedQuestions, showAll)
-	for _, detectedItem := range output {
-		if detectedItem.found {
-			fmt.Printf("%d. %s %s\n", detectedItem.number, detectedItem.atStr, detectedItem.question.shortent)
+	foundEps := map[string]FoundEp{}
+
+	for _, item := range items {
+		name := item.Name()
+		nameParts := strings.Split(name, ".")
+		if len(nameParts) < 4 {
+			// File has invalid name
+			continue
+		}
+		epNumberStr := nameParts[0]
+		epNumber, err := strconv.Atoi(epNumberStr)
+		if err != nil {
+			// File has invalid name
+			continue
+		}
+		ext := ""
+		for {
+			part := nameParts[len(nameParts)-1]
+			nameParts = nameParts[:len(nameParts)-1]
+			if part == "vid" {
+				break
+			}
+
+			if ext == "" {
+				ext = part
+			} else {
+				ext = part + "." + ext
+			}
+		}
+
+		epName := strings.Join(nameParts[1:], ".")
+		lowerEpName := strings.ToLower(epName)
+		if strings.Contains(lowerEpName, "otdm") {
+			// Wrong series
+			continue
+		}
+		if !strings.Contains(lowerEpName, "ask kati anything") && !strings.Contains(lowerEpName, "aka") {
+			// Wrong series
+			continue
+		}
+
+		ep, ok := foundEps[epName]
+		if !ok {
+			ep = FoundEp{
+				RawNumber: epNumberStr,
+				Number:    epNumber,
+				Name:      epName,
+			}
+		}
+
+		if ext == "description" {
+			ep.FoundDescription = true
+		} else if ext == "en.vtt" {
+			ep.FoundVTT = true
+		} else if ext == "anylize.results" {
+			data, err := ioutil.ReadFile(path.Join(".vid-meta", name))
+			var results FoundResults
+			if err != nil {
+				results.Err = err.Error()
+			} else {
+				err = json.Unmarshal(data, &results)
+				if err != nil {
+					results.Err = err.Error()
+				}
+			}
+			ep.FoundResults = &results
 		} else {
-			fmt.Printf("%d. ??:?? %s\n", detectedItem.number, detectedItem.question.shortent)
+			// Unknown file extension go to next file
+			continue
+		}
+
+		foundEps[epName] = ep
+	}
+
+	eps := FoundEps{}
+	for _, value := range foundEps {
+		eps = append(eps, value)
+	}
+	sort.Sort(FoundEpsByEpNumb{eps})
+
+	var wg sync.WaitGroup
+	for _, ep := range eps {
+		if ep.FoundResults == nil && ep.FoundDescription && ep.FoundVTT {
+			wg.Add(1)
+			go func(ep FoundEp) {
+				defer wg.Done()
+				questions, timeStamps, err := checkVid(&ep)
+				errStr := ""
+				if err != nil {
+					errStr = err.Error()
+				}
+				results := FoundResults{
+					Questions: questions,
+					TimeStamp: timeStamps,
+					Err:       errStr,
+				}
+				toSafe, err := json.Marshal(results)
+				if err != nil {
+					results = FoundResults{Err: err.Error()}
+					toSafe, err = json.Marshal(results)
+					if err != nil {
+						return
+					}
+				}
+
+				err = ioutil.WriteFile(".vid-meta/"+ep.BaseName()+"anylize.results", toSafe, 0777)
+				if err != nil {
+					return
+				}
+				ep.FoundResults = &results
+			}(ep)
 		}
 	}
-	fmt.Println("\nPlease correct me if i'm wrong these are auto generated :)")
+	wg.Wait()
+
+	videosLock.Lock()
+	videos = eps
+	videosLock.Unlock()
+
+	return nil
+}
+
+func checkVid(ep *FoundEp) ([]QuestionType, []DetectedTimeStamp, error) {
+	words, wordsMap, err := extractSubtitles(ep)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	linesThatMightBeQuestions, err := extractComments(ep)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	detectedQuestions := detectQuestions(linesThatMightBeQuestions)
+	detectedTimeStamps := detectTimestamps(wordsMap, words, detectedQuestions)
+	return detectedQuestions, detectedTimeStamps, nil
+}
+
+func main() {
+	fmt.Println("Staring..")
+	fetchOnStartup, err := startup()
+	check(err)
+
+	go func() {
+		check(serve())
+	}()
+
+	if fetchOnStartup {
+		fmt.Println("Downloading latest video meta data..")
+		err = downloadLatestVideosMeta()
+		check(err)
+	}
+
+	fmt.Println("Check downloaded videos..")
+	err = checkDownloadedVideos()
+	if err != nil {
+		fmt.Println("checking downloaded videos error:", err)
+	}
 }
