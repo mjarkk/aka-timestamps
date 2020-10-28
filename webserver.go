@@ -22,7 +22,7 @@ func serve(useSystemYoutubeDL bool) error {
 			return
 		}
 
-		value, ok := os.LookupEnv("AKS_KEYS")
+		value, ok := os.LookupEnv("AKA_KEYS")
 		if ok {
 			allowedKeys := strings.Split(value, ",")
 			found := false
