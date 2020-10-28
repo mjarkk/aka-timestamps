@@ -4,12 +4,15 @@ import (
 	"os"
 	"strings"
 
-	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 )
 
 func serve(useSystemYoutubeDL bool) error {
+	gin.SetMode(gin.ReleaseMode)
+
 	r := gin.Default()
+	r.Use(cors())
+
 	r.POST("/eps/re-fetch", func(c *gin.Context) {
 		var json struct {
 			Key string `json:"key"`
@@ -53,7 +56,7 @@ func serve(useSystemYoutubeDL bool) error {
 			downloadingLock.Unlock()
 		}()
 
-		err := downloadLatestVideosMeta(useSystemYoutubeDL)
+		err := downloadLatestVideosMeta(useSystemYoutubeDL, false)
 		if err != nil {
 			c.JSON(400, gin.H{"error": err.Error()})
 			return
@@ -74,11 +77,16 @@ func serve(useSystemYoutubeDL bool) error {
 		c.JSON(200, videos)
 	})
 
-	corsConf := cors.DefaultConfig()
-	corsConf.AllowAllOrigins = true
-	corsConf.AllowCredentials = true
-	corsConf.AllowHeaders = nil
-	r.Use(cors.New(corsConf))
-
 	return r.Run("0.0.0.0:9090")
+}
+
+func cors() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Header("Access-Control-Allow-Origin", "*")
+		c.Header("Access-Control-Allow-Credentials", "true")
+		c.Header("Access-Control-Allow-Headers", "*")
+		c.Header("Access-Control-Allow-Methods", "POST, PATCH, DELETE, OPTIONS, GET, PUT")
+
+		c.Next()
+	}
 }

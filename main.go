@@ -13,7 +13,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/asticode/go-astisub"
@@ -25,15 +24,15 @@ type textAtTime struct {
 }
 
 type QuestionType struct {
-	Full       string
-	Searchable string
-	Shortent   string
+	Full       string `json:"full"`
+	Searchable string `json:"searchable"`
+	Shortent   string `json:"shortent"`
 }
 
 type DetectedTimeStamp struct {
-	QuestionIdx int
-	AtStr       string
-	Found       bool
+	QuestionIdx int    `json:"questionIdx"`
+	AtStr       string `json:"atStr"`
+	Found       bool   `json:"found"`
 }
 
 func startup() (useSystemYoutubeDL, fetchOnStartup bool, err error) {
@@ -51,11 +50,16 @@ func startup() (useSystemYoutubeDL, fetchOnStartup bool, err error) {
 	return
 }
 
-func downloadLatestVideosMeta(useSystemYoutubeDL bool) error {
+func downloadLatestVideosMeta(useSystemYoutubeDL bool, firstTime bool) error {
 	youtubedl := "../youtube-dl"
 	if useSystemYoutubeDL {
 		youtubedl = "youtube-dl"
 	}
+	max := "5"
+	if firstTime {
+		max = "10"
+	}
+
 	cmd := exec.Command(
 		youtubedl,
 		"--yes-playlist",
@@ -63,7 +67,7 @@ func downloadLatestVideosMeta(useSystemYoutubeDL bool) error {
 		"--output", "%(playlist_index)s.%(title)s.vid",
 		"--write-auto-sub",
 		"--write-description",
-		"--max-downloads", "5",
+		"--max-downloads", max,
 		"--skip-download", "https://www.youtube.com/playlist?list=UUs58xfxPpjVARRuwjH8usfw",
 	)
 
@@ -150,7 +154,7 @@ func extractSubtitles(ep *FoundEp) ([]textAtTime, map[string][]int, error) {
 }
 
 func extractComments(ep *FoundEp) ([]string, error) {
-	descriptionBytes, err := ioutil.ReadFile(".vid-meta/" + ep.BaseName() + "description")
+	descriptionBytes, err := ioutil.ReadFile(path.Join(".vid-meta", ep.BaseName()+"description"))
 	if err != nil {
 		return nil, err
 	}
@@ -375,12 +379,12 @@ type FoundEpsByEpNumb struct{ FoundEps }
 func (s FoundEpsByEpNumb) Less(i, j int) bool { return s.FoundEps[i].Number < s.FoundEps[j].Number }
 
 type FoundEp struct {
-	Number           int
-	RawNumber        string
-	Name             string
-	FoundDescription bool
-	FoundVTT         bool
-	FoundResults     *FoundResults
+	Number           int           `json:"number"`
+	RawNumber        string        `json:"rawNumber"`
+	Name             string        `json:"name"`
+	FoundDescription bool          `json:"foundDescription"`
+	FoundVTT         bool          `json:"foundVTT"`
+	FoundResults     *FoundResults `json:"foundResults"`
 }
 
 func (ep *FoundEp) BaseName() string {
@@ -388,9 +392,9 @@ func (ep *FoundEp) BaseName() string {
 }
 
 type FoundResults struct {
-	Questions []QuestionType
-	TimeStamp []DetectedTimeStamp
-	Err       string
+	Questions []QuestionType      `json:"questions"`
+	TimeStamp []DetectedTimeStamp `json:"timeStamp"`
+	Err       string              `json:"err"`
 }
 
 func checkDownloadedVideos() error {
@@ -479,40 +483,36 @@ func checkDownloadedVideos() error {
 	}
 	sort.Sort(FoundEpsByEpNumb{eps})
 
-	var wg sync.WaitGroup
-	for _, ep := range eps {
-		if ep.FoundResults == nil && ep.FoundDescription && ep.FoundVTT {
-			wg.Add(1)
-			go func(ep FoundEp) {
-				defer wg.Done()
-				questions, timeStamps, err := checkVid(&ep)
-				errStr := ""
-				if err != nil {
-					errStr = err.Error()
-				}
-				results := FoundResults{
-					Questions: questions,
-					TimeStamp: timeStamps,
-					Err:       errStr,
-				}
-				toSafe, err := json.Marshal(results)
-				if err != nil {
-					results = FoundResults{Err: err.Error()}
-					toSafe, err = json.Marshal(results)
-					if err != nil {
-						return
-					}
-				}
-
-				err = ioutil.WriteFile(".vid-meta/"+ep.BaseName()+"anylize.results", toSafe, 0777)
-				if err != nil {
-					return
-				}
-				ep.FoundResults = &results
-			}(ep)
+	for idx, ep := range eps {
+		if ep.FoundResults != nil || !ep.FoundDescription || !ep.FoundVTT {
+			continue
 		}
+		questions, timeStamps, err := checkVid(&ep)
+		errStr := ""
+		if err != nil {
+			errStr = err.Error()
+		}
+		results := FoundResults{
+			Questions: questions,
+			TimeStamp: timeStamps,
+			Err:       errStr,
+		}
+		toSafe, err := json.Marshal(results)
+		if err != nil {
+			results = FoundResults{Err: err.Error()}
+			toSafe, err = json.Marshal(results)
+			if err != nil {
+				continue
+			}
+		}
+
+		err = ioutil.WriteFile(".vid-meta/"+ep.BaseName()+"anylize.results", toSafe, 0777)
+		if err != nil {
+			continue
+		}
+		ep.FoundResults = &results
+		eps[idx] = ep
 	}
-	wg.Wait()
 
 	videosLock.Lock()
 	videos = eps
@@ -555,7 +555,7 @@ func main() {
 
 		if fetchOnStartup {
 			fmt.Println("Downloading latest video meta data..")
-			err = downloadLatestVideosMeta(useSystemYoutubeDL)
+			err = downloadLatestVideosMeta(useSystemYoutubeDL, true)
 			if err != nil {
 				fmt.Println("downloading videos error:", err)
 				return
@@ -566,6 +566,8 @@ func main() {
 		err = checkDownloadedVideos()
 		if err != nil {
 			fmt.Println("checking downloaded videos error:", err)
+		} else {
+			fmt.Println("Comleted search for videos")
 		}
 	}(useSystemYoutubeDL)
 
