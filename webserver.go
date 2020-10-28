@@ -8,7 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func serve() error {
+func serve(useSystemYoutubeDL bool) error {
 	r := gin.Default()
 	r.POST("/eps/re-fetch", func(c *gin.Context) {
 		var json struct {
@@ -38,7 +38,22 @@ func serve() error {
 			}
 		}
 
-		err := downloadLatestVideosMeta()
+		downloadingLock.Lock()
+		if downloading {
+			downloadingLock.Unlock()
+			c.JSON(400, gin.H{"error": "Buzzy updating"})
+			return
+		}
+		downloading = true
+		downloadingLock.Unlock()
+
+		defer func() {
+			downloadingLock.Lock()
+			downloading = false
+			downloadingLock.Unlock()
+		}()
+
+		err := downloadLatestVideosMeta(useSystemYoutubeDL)
 		if err != nil {
 			c.JSON(400, gin.H{"error": err.Error()})
 			return
@@ -52,10 +67,11 @@ func serve() error {
 
 		c.JSON(200, gin.H{"ok": true})
 	})
+
 	r.GET("/eps", func(c *gin.Context) {
 		videosLock.Lock()
+		defer videosLock.Unlock()
 		c.JSON(200, videos)
-		videosLock.Unlock()
 	})
 
 	corsConf := cors.DefaultConfig()

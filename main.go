@@ -36,10 +36,10 @@ type DetectedTimeStamp struct {
 	Found       bool
 }
 
-func startup() (fetchOnStartup bool, err error) {
+func startup() (useSystemYoutubeDL, fetchOnStartup bool, err error) {
 	_, err = ioutil.ReadFile("./youtube-dl")
 	if err != nil {
-		return
+		useSystemYoutubeDL = true
 	}
 
 	err = os.Mkdir(".vid-meta", 0777)
@@ -51,9 +51,13 @@ func startup() (fetchOnStartup bool, err error) {
 	return
 }
 
-func downloadLatestVideosMeta() error {
+func downloadLatestVideosMeta(useSystemYoutubeDL bool) error {
+	youtubedl := "../youtube-dl"
+	if useSystemYoutubeDL {
+		youtubedl = "youtube-dl"
+	}
 	cmd := exec.Command(
-		"../youtube-dl",
+		youtubedl,
 		"--yes-playlist",
 		"--ignore-errors",
 		"--output", "%(playlist_index)s.%(title)s.vid",
@@ -535,22 +539,35 @@ func checkVid(ep *FoundEp) ([]QuestionType, []DetectedTimeStamp, error) {
 
 func main() {
 	fmt.Println("Staring..")
-	fetchOnStartup, err := startup()
+	useSystemYoutubeDL, fetchOnStartup, err := startup()
 	check(err)
 
-	go func() {
-		check(serve())
-	}()
+	go func(useSystemYoutubeDL bool) {
+		downloadingLock.Lock()
+		downloading = true
+		downloadingLock.Unlock()
 
-	if fetchOnStartup {
-		fmt.Println("Downloading latest video meta data..")
-		err = downloadLatestVideosMeta()
-		check(err)
-	}
+		defer func() {
+			downloadingLock.Lock()
+			downloading = false
+			downloadingLock.Unlock()
+		}()
 
-	fmt.Println("Check downloaded videos..")
-	err = checkDownloadedVideos()
-	if err != nil {
-		fmt.Println("checking downloaded videos error:", err)
-	}
+		if fetchOnStartup {
+			fmt.Println("Downloading latest video meta data..")
+			err = downloadLatestVideosMeta(useSystemYoutubeDL)
+			if err != nil {
+				fmt.Println("downloading videos error:", err)
+				return
+			}
+		}
+
+		fmt.Println("Check downloaded videos..")
+		err = checkDownloadedVideos()
+		if err != nil {
+			fmt.Println("checking downloaded videos error:", err)
+		}
+	}(useSystemYoutubeDL)
+
+	check(serve(useSystemYoutubeDL))
 }
