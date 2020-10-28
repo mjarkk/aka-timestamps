@@ -1,7 +1,7 @@
 import Head from 'next/head'
 import { useEffect, useState } from 'react'
 
-const url = (path: string) => (window.location.host == 'localhost:3000' ? 'http://localhost:9090' : 'https://api.aka-podcast.mkopenga.com.mkopenga.com') + path
+const url = (path: string) => (window.location.host == 'localhost:3000' ? 'http://localhost:9090' : 'https://api.aka-podcast.mkopenga.com') + path
 
 interface EP {
   number: number
