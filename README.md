@@ -13,7 +13,7 @@ docker build -t aka-timestamps:latest .
 tr -cd '[:alnum:]' < /dev/urandom | fold -w30 | head -n1
 
 # Run the container
-docker run -d --env "AKA_KEYS=VERY_SECRET_KEY_HERE,OPTIONAL_SECOND_KEY,ANOTHER" -p 127.0.0.1:9090:9090 --name aka-timestamps --restart always aka-timestamps
+docker run -d --env "AKA_KEYS=VERY_SECRET_KEY_HERE,OPTIONAL_SECOND_KEY,ANOTHER" -p 127.0.0.1:9090:9090 --name aka-timestamps --restart always aka-timestamps:latest
 ```
 *For ssl use a reverse proxy. The webapp is setup using (Vercel)[https://vercel.com/]*
 
