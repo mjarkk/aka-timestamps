@@ -32,12 +32,46 @@ interface DetectedTimeStamp {
 
 export default function Home() {
   const [eps, setEps] = useState([] as EP[])
+  const [key, setKey] = useState('')
+  const [showKeyInput, setShowKeyInput] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
-  useEffect(() => {
+  const loadEps = () =>
     fetch(url('/eps'))
       .then(r => r.json())
       .then(eps => setEps(eps))
+
+  useEffect(() => {
+    loadEps()
+
+    const key = localStorage.getItem('aka-timestamps-key')
+    if (key) setKey(key)
   }, [])
+
+  const checkNewVideos = async () => {
+    try {
+      setLoading(true)
+      setError('')
+      localStorage.setItem('aka-timestamps-key', key)
+      const options = {
+        method: "POST",
+        body: JSON.stringify({ key })
+      }
+      const r = await fetch(url('/eps/re-fetch'), options)
+      const data = r.json() as any
+      if (data.error) {
+        setError(data.error)
+      } else {
+        await new Promise(res => setTimeout(res, 500))
+        await loadEps()
+        setError('')
+        setShowKeyInput(false)
+      }
+    } finally {
+      setLoading(false)
+    }
+  }
 
   return (
     <>
@@ -51,6 +85,22 @@ export default function Home() {
         <div>
           <h1>AKA Timestamps</h1>
           <p className="info">This generates timestamps for the <a href="https://www.youtube.com/playlist?list=PLMSjrqhPvOoZrz95tshKA9tIymbqxNxKn">Ask Kati Anything! (AKA)</a> podcast, it's a podcast filled with mental health questions and answers.</p>
+          {showKeyInput ?
+            <div>
+              <div>
+                <input autoFocus placeholder="Refresh key" value={key} onChange={e => setKey(e.target.value)} disabled={loading} />
+                <button onClick={checkNewVideos} disabled={loading}>Check</button>
+              </div>
+              <div className="refresh-info">
+                {loading ? <p>Checking for new videos..</p> : ''}
+                {error ? <p className="error">{error}</p> : ''}
+              </div>
+            </div>
+            :
+            <div>
+              <button onClick={() => setShowKeyInput(true)}>Check for new videos</button>
+            </div>
+          }
           {eps.map((ep, key) => <EpBlock key={key} ep={ep} />)}
           <p className="info">The code of this tool is open source and can be found <a href="https://github.com/mjarkk/aka-timestamps">here</a></p>
         </div>
@@ -75,6 +125,40 @@ export default function Home() {
         h3 {
           font-size: 1.4rem;
         }
+        button {
+          background-color: #e3b4af;
+          color: #fafcc6;
+          font-weight: bold;
+          padding: 5px 15px;
+          font-size: 1rem;
+          border-radius: 10px;
+          border: 0;
+          transition: background-color 0.2s;
+          cursor: pointer;
+        }
+        button:hover {
+          background-color: #5d07fe;
+        }
+        input {
+          padding: 5px 15px;
+          background-color: #fafcc6;
+          font-weight: bold;
+          color: #e3b4af;
+          font-size: 1rem;
+          border: 0;
+          border-bottom: 2px solid #e3b4af;
+          margin-right: 10px;
+        }
+        input::-webkit-input-placeholder {
+          color: #e3b4af;
+          opacity: 0.5;
+        }
+        input:disabled {
+          opacity: 0.5;
+        }
+        button:disabled {
+          opacity: 0.5;
+        }
       `}</style>
       <style jsx>{`
         main {
@@ -96,6 +180,12 @@ export default function Home() {
         }
         .info:hover a {
           color: #bb918c;
+        }
+        .refresh-info {
+          padding: 10px 5px 0 5px;
+        }
+        .error {
+          color: red;
         }
       `}</style>
     </>
