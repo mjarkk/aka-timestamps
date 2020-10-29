@@ -62,6 +62,7 @@ func downloadLatestVideosMeta(useSystemYoutubeDL bool, firstTime bool) error {
 
 	cmd := exec.Command(
 		youtubedl,
+		"-4",
 		"--yes-playlist",
 		"--ignore-errors",
 		"--output", "%(playlist_index)s.%(title)s.vid",
