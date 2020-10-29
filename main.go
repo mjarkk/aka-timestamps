@@ -88,6 +88,9 @@ func downloadLatestVideosMeta(useSystemYoutubeDL bool, firstTime bool) error {
 		return errors.New("youtube-dl exitted without any output nor error code")
 	}
 
+	fmt.Println("youtube-dl output:")
+	fmt.Println(output.String())
+
 	if err == nil {
 		return nil
 	}
