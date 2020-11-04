@@ -31,16 +31,21 @@ interface DetectedTimeStamp {
 }
 
 export default function Home() {
-  const [eps, setEps] = useState([] as EP[])
+  const [eps, setEps] = useState(undefined as EP[] | undefined)
   const [key, setKey] = useState('')
   const [showKeyInput, setShowKeyInput] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  const loadEps = () =>
-    fetch(url('/eps'))
-      .then(r => r.json())
-      .then(eps => setEps(eps))
+  const loadEps = async () => {
+    try {
+      const r = await fetch(url('/eps'))
+      const eps = await r.json()
+      setEps(eps)
+    } catch (e) {
+      setEps([])
+    }
+  }
 
   useEffect(() => {
     loadEps()
@@ -88,6 +93,7 @@ export default function Home() {
           {showKeyInput ?
             <div>
               <div>
+                <p className="info">Because of Youtube's query limitations for videos i have limited the capability query to a handful of people, to get access to this please contact me at <a>mkopenga@gmail.com</a></p>
                 <input autoFocus placeholder="Refresh key" value={key} onChange={e => setKey(e.target.value)} disabled={loading} />
                 <button onClick={checkNewVideos} disabled={loading}>Check</button>
               </div>
@@ -101,7 +107,8 @@ export default function Home() {
               <button onClick={() => setShowKeyInput(true)}>Check for new videos</button>
             </div>
           }
-          {eps.map((ep, key) => <EpBlock key={key} ep={ep} />)}
+
+          {eps ? eps.map((ep, key) => <EpBlock key={key} ep={ep} />) : <EpBlock />}
           <p className="info">The code of this tool is open source and can be found <a href="https://github.com/mjarkk/aka-timestamps">here</a></p>
         </div>
       </main>
@@ -192,18 +199,19 @@ export default function Home() {
   )
 }
 
-function EpBlock({ ep }: { ep: EP }) {
+function EpBlock({ ep }: { ep?: EP }) {
   return (
     <div className="ep-block">
-      <h3>{ep.name}</h3>
-      {ep.foundResults?.questions && ep.foundResults?.timeStamp
+      <h3>{ep?.name}</h3>
+      {ep?.foundResults?.questions && ep?.foundResults?.timeStamp
         ? <Timestamps res={ep.foundResults} />
         : <div className="meta">
           <p>{
-            !ep.foundDescription ? `Unable to read description of episode`
-              : !ep.foundVTT ? `Unable to read description of episode`
-                : ep.foundResults?.err ? `Oh wired error: ${ep.foundResults?.err}`
-                  : `Unable to get timestamps for this episode`
+            !ep ? `loading..`
+              : !ep.foundDescription ? `Unable to read description of episode`
+                : !ep.foundVTT ? `Unable to read description of episode`
+                  : ep.foundResults?.err ? `Oh wired error: ${ep.foundResults?.err}`
+                    : `Unable to get timestamps for this episode`
           }</p>
         </div>
       }
@@ -243,15 +251,40 @@ function Timestamps({ res }: { res: AnylizeResults }) {
 
   const question = (idx: number) => res.questions[idx]
 
+  const copy = async () => {
+    const toCopy = timestamps.map(timestamp => `${timestamp.atStr} ${question(timestamp.questionIdx).shortent}`).join('\n')
+    await navigator.clipboard.writeText(toCopy)
+  }
+
   return (
     <div className="time-stamps">
       {timestamps.map((timestamp, key) =>
         <p key={key}>{timestamp.atStr} {question(timestamp.questionIdx).shortent}</p>
       )}
+      <div>
+        <button onClick={copy}>Copy</button>
+      </div>
       <style jsx>{`
         p {
           font-size: 0.9rem;
           margin-bottom: 5px;
+        }
+        div {
+          padding-top: 10px;
+        }
+        button {
+          background-color: #fafcc6;
+          color: #e3b4af;
+          font-weight: bold;
+          padding: 5px 15px;
+          font-size: 1rem;
+          border-radius: 10px;
+          border: 0;
+          transition: background-color 0.2s;
+          cursor: pointer;
+        }
+        button:hover {
+          background-color: #5d07fe;
         }
       `}</style>
     </div>
