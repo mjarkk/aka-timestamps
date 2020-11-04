@@ -30,12 +30,91 @@ interface DetectedTimeStamp {
   found: boolean
 }
 
+interface Theme {
+  defaultBg: string
+  secondBgAndText: string
+  importantText: string
+  secondBgText: string
+}
+
+const defaultTheme: Theme = {
+  defaultBg: '#eee',
+  secondBgAndText: '#bbb',
+  importantText: '#bbb',
+  secondBgText: '#ccc',
+}
+
+const themes: Theme[] = [
+  {
+    defaultBg: '#f8a8a3',
+    secondBgAndText: '#5fce7b',
+    importantText: '#36b355',
+    secondBgText: 'black',
+  },
+  {
+    defaultBg: '#dee7e6',
+    secondBgAndText: '#fb948d',
+    importantText: '#d67e78',
+    secondBgText: '#3c7440',
+  },
+  {
+    defaultBg: '#df84b9',
+    secondBgAndText: '#f1f9a0',
+    importantText: '#c8cf79',
+    secondBgText: '#1e0ed1',
+  },
+  {
+    defaultBg: '#d8f4d7',
+    secondBgAndText: '#4cd46e',
+    importantText: '#2db64f',
+    secondBgText: 'black',
+  },
+  {
+    defaultBg: '#3402cb',
+    secondBgAndText: '#2cfa29',
+    importantText: '#a0ff9f',
+    secondBgText: 'black',
+  },
+  {
+    defaultBg: '#f8c3db',
+    secondBgAndText: '#1404ce',
+    importantText: '#0f01a8',
+    secondBgText: '#fb8c58',
+  },
+  {
+    defaultBg: '#fefcc7',
+    secondBgAndText: '#53e25c',
+    importantText: '#47c04f',
+    secondBgText: '#400ae2',
+  },
+  {
+    defaultBg: '#3a02f2',
+    secondBgAndText: '#82f1e4',
+    importantText: '#c1fdf5',
+    secondBgText: '#000000',
+  },
+  {
+    defaultBg: '#fafcc6',
+    secondBgAndText: '#e3b4af',
+    importantText: '#bb918c',
+    secondBgText: '#5d07fe',
+  },
+  {
+    defaultBg: '#eefc97',
+    secondBgAndText: '#fa8d74',
+    importantText: '#c56853',
+    secondBgText: '#3a02f2',
+  }
+]
+
 export default function Home() {
   const [eps, setEps] = useState(undefined as EP[] | undefined)
   const [key, setKey] = useState('')
   const [showKeyInput, setShowKeyInput] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [theme, setTheme] = useState(defaultTheme)
+  const [transitions, setTransitions] = useState(false)
 
   const loadEps = async () => {
     try {
@@ -46,13 +125,6 @@ export default function Home() {
       setEps([])
     }
   }
-
-  useEffect(() => {
-    loadEps()
-
-    const key = localStorage.getItem('aka-timestamps-key')
-    if (key) setKey(key)
-  }, [])
 
   const checkNewVideos = async () => {
     try {
@@ -77,6 +149,16 @@ export default function Home() {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    setTheme(themes[Math.floor(Math.random() * themes.length)])
+    loadEps()
+
+    const key = localStorage.getItem('aka-timestamps-key')
+    if (key) setKey(key)
+
+    setTimeout(() => setTransitions(true), 100);
+  }, [])
 
   return (
     <>
@@ -108,20 +190,21 @@ export default function Home() {
             </div>
           }
 
-          {eps ? eps.map((ep, key) => <EpBlock key={key} ep={ep} />) : <EpBlock />}
-          <p className="info">The code of this tool is open source and can be found <a href="https://github.com/mjarkk/aka-timestamps">here</a></p>
+          {eps ? eps.map((ep, key) => <EpBlock theme={theme} key={key} ep={ep} />) : <EpBlock theme={theme} />}
+          <p className="info"><a href="https://github.com/mjarkk/aka-timestamps">The code of this tool is open source and can be found here</a></p>
         </div>
       </main>
       <style jsx global>{`
         * {
           padding: 0px;
           margin: 0px;
+          transition: ${transitions ? `background-color 0.2s, color 0.2s` : ``};
         }
         body {
           font-size: 18px;
           font-family: sans-serif;
-          background-color: #fafcc6;
-          color: #e3b4af;
+          background-color: ${theme.defaultBg};
+          color: ${theme.secondBgAndText};
         }
         h1, h2, h3 {
           font-family: 'Source Serif Pro', serif;
@@ -133,31 +216,30 @@ export default function Home() {
           font-size: 1.4rem;
         }
         button {
-          background-color: #e3b4af;
-          color: #fafcc6;
+          background-color: ${theme.secondBgAndText};
+          color: ${theme.defaultBg};
           font-weight: bold;
           padding: 5px 15px;
           font-size: 1rem;
           border-radius: 10px;
           border: 0;
-          transition: background-color 0.2s;
           cursor: pointer;
         }
         button:hover {
-          background-color: #5d07fe;
+          background-color: ${theme.secondBgText};
         }
         input {
           padding: 5px 15px;
-          background-color: #fafcc6;
+          background-color: ${theme.defaultBg};
           font-weight: bold;
-          color: #e3b4af;
+          color: ${theme.secondBgAndText};
           font-size: 1rem;
           border: 0;
-          border-bottom: 2px solid #e3b4af;
+          border-bottom: 2px solid ${theme.secondBgAndText};
           margin-right: 10px;
         }
         input::-webkit-input-placeholder {
-          color: #e3b4af;
+          color: ${theme.secondBgAndText};
           opacity: 0.5;
         }
         input:disabled {
@@ -182,11 +264,10 @@ export default function Home() {
           font-weight: bold;
         }
         .info a {
-          color: #e3b4af;
-          transition: color 0.1s;
+          color: ${theme.secondBgAndText};
         }
         .info:hover a {
-          color: #bb918c;
+          color: ${theme.importantText};
         }
         .refresh-info {
           padding: 10px 5px 0 5px;
@@ -199,12 +280,12 @@ export default function Home() {
   )
 }
 
-function EpBlock({ ep }: { ep?: EP }) {
+function EpBlock({ ep, theme }: { ep?: EP, theme: Theme }) {
   return (
     <div className="ep-block">
       <h3>{ep?.name}</h3>
       {ep?.foundResults?.questions && ep?.foundResults?.timeStamp
-        ? <Timestamps res={ep.foundResults} />
+        ? <Timestamps res={ep.foundResults} theme={theme} />
         : <div className="meta">
           <p>{
             !ep ? `loading..`
@@ -217,11 +298,11 @@ function EpBlock({ ep }: { ep?: EP }) {
       }
       <style jsx>{`
         .ep-block {
-          background-color: #e3b4af;
+          background-color: ${theme.secondBgAndText};
           padding: 20px;
           margin: 40px 0px;
           border-radius: 10px;
-          color: #5d07fe;
+          color: ${theme.secondBgText};
           overflow: hidden;
         }
         .ep-block h3 {
@@ -232,7 +313,7 @@ function EpBlock({ ep }: { ep?: EP }) {
   )
 }
 
-function Timestamps({ res }: { res: AnylizeResults }) {
+function Timestamps({ res, theme }: { res: AnylizeResults, theme: Theme }) {
   const [timestamps, setTimestamps] = useState([] as DetectedTimeStamp[])
 
   useEffect(() => {
@@ -262,7 +343,7 @@ function Timestamps({ res }: { res: AnylizeResults }) {
         <p key={key}>{timestamp.atStr} {question(timestamp.questionIdx).shortent}</p>
       )}
       <div>
-        <button onClick={copy}>Copy</button>
+        <button onClick={copy}>Copy timestamps</button>
       </div>
       <style jsx>{`
         p {
@@ -273,8 +354,8 @@ function Timestamps({ res }: { res: AnylizeResults }) {
           padding-top: 10px;
         }
         button {
-          background-color: #fafcc6;
-          color: #e3b4af;
+          background-color: ${theme.defaultBg};
+          color: ${theme.secondBgAndText};
           font-weight: bold;
           padding: 5px 15px;
           font-size: 1rem;
@@ -284,7 +365,7 @@ function Timestamps({ res }: { res: AnylizeResults }) {
           cursor: pointer;
         }
         button:hover {
-          background-color: #5d07fe;
+          background-color: ${theme.secondBgText};
         }
       `}</style>
     </div>
